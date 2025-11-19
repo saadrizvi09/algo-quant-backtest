@@ -9,7 +9,7 @@ from plotly.subplots import make_subplots
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Saad Rizvi Gandphad strategy", layout="wide", page_icon="🎯")
 
-# --- CUSTOM INDICATOR: SAFE RSI (Manual Math Fix) ---
+# --- CUSTOM INDICATOR: SAFE RSI (NO CHANGES) ---
 class SafeRSI(bt.Indicator):
     lines = ('rsi',)
     params = (('period', 14), ('movav', bt.indicators.MovAv.SMA))
@@ -19,10 +19,7 @@ class SafeRSI(bt.Indicator):
         change = self.data - self.data(-1)
         
         # 2. Separate Gains (Up) and Losses (Down)
-        # If change > 0, Up = change. If change < 0, Up = 0.
         up = bt.indicators.Max(change, 0.0)
-        
-        # If change < 0, Down = -change (positive value). If change > 0, Down = 0.
         down = -bt.indicators.Min(change, 0.0)
         
         # 3. Calculate Averages
@@ -36,7 +33,7 @@ class SafeRSI(bt.Indicator):
         rs = maup / madown_safe
         self.lines.rsi = 100.0 - (100.0 / (1.0 + rs))
 
-# --- STRATEGY CLASS (Sniper) ---
+# --- STRATEGY CLASS (NO LOGIC CHANGES - ONLY LOGGING DATES) ---
 class SniperStrategy(bt.Strategy):
     params = (
         ('sma_period', 200),      # Trend Filter
@@ -71,11 +68,18 @@ class SniperStrategy(bt.Strategy):
         else:
             exit_price = self.data.close[0]
 
+        # --- NEW: EXTRACT DATES ---
+        # Convert Backtrader float dates to Python datetime objects
+        entry_dt = bt.num2date(trade.dtopen)
+        exit_dt = bt.num2date(trade.dtclose)
+
         # Log to Session State
         if 'trades' in st.session_state:
             st.session_state.trades.append({
                 'Symbol': st.session_state.ticker,
                 'Type': 'LONG',
+                'Entry Date': entry_dt.strftime('%Y-%m-%d'), # Log Date
+                'Exit Date': exit_dt.strftime('%Y-%m-%d'),   # Log Date
                 'Entry Price': trade.price,
                 'Exit Price': exit_price,
                 'PnL': trade.pnlcomm,
@@ -99,7 +103,7 @@ class SniperStrategy(bt.Strategy):
                 'Equity': self.broker.getvalue()
             })
 
-        # --- LOGIC ---
+        # --- STRATEGY LOGIC (UNCHANGED) ---
         
         # 1. EXIT LOGIC (Take Profit Quickly)
         if self.position:
@@ -128,8 +132,7 @@ st.markdown("""
 * **Goal:** 80-90% Win Rate.
 """)
 
-# Sidebar
-# --- SIDEBAR CONFIGURATION ---
+# --- SIDEBAR CONFIGURATION (UPDATED WITH MEME COINS) ---
 with st.sidebar:
     st.header("⚙️ Configuration")
     
@@ -207,8 +210,8 @@ if run_btn:
                 # Run Backtest
                 cerebro = bt.Cerebro()
                 cerebro.addstrategy(SniperStrategy, 
-                                  rsi_entry=rsi_entry,
-                                  trading_start_date=start_date)
+                                    rsi_entry=rsi_entry,
+                                    trading_start_date=start_date)
                 
                 cerebro.adddata(bt.feeds.PandasData(dataname=df))
                 cerebro.broker.setcash(100000)
@@ -260,34 +263,58 @@ if run_btn:
         else:
             st.error("Data download failed.")
 
-# --- LIVE SCANNER ---
+# --- LIVE SCANNER (UPDATED WITH MEME COINS) ---
 st.sidebar.divider()
 st.sidebar.header("📡 Panic Scanner")
+
 if st.sidebar.button("Find Panic Dips"):
-    st.sidebar.info("Scanning for RSI < 10 opportunities...")
-    scan_list = ["BTC-USD", "ETH-USD", "NVDA", "TSLA", "QQQ"]
-    for c in scan_list:
+    st.sidebar.info("Scanning Top 20 + Memes...")
+    
+    # Define the list to scan based on manual selection
+    scan_crypto = [
+        "BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", # Majors
+        "DOGE-USD", "PEPE-USD", "SHIB-USD", "WIF-USD", "BONK-USD", # Memes
+        "AVAX-USD", "NEAR-USD", "RNDR-USD", "FET-USD" # AI/L1s
+    ]
+    
+    scan_stocks = ["NVDA", "TSLA", "AMD", "MSTR", "COIN", "MARA"]
+    
+    # Select list
+    target_list = scan_crypto if asset_class == "Crypto" else scan_stocks
+    
+    for c in target_list:
         try:
-            df = yf.download(c, period="6mo", interval="1d", progress=False)
-            if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+            # Download minimal data for speed
+            df_scan = yf.download(c, period="3mo", interval="1d", progress=False)
             
+            # Handle MultiIndex if yfinance returns it
+            if isinstance(df_scan.columns, pd.MultiIndex): 
+                df_scan.columns = df_scan.columns.get_level_values(0)
+            
+            if df_scan.empty: continue
+
             # Calc Indicators Manually for Scanner
-            delta = df['Close'].diff()
+            delta = df_scan['Close'].diff()
             gain = (delta.where(delta > 0, 0)).rolling(window=2).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(window=2).mean()
             
-            # Manual Safe Division for Scanner
+            # Manual Safe Division
             rs = gain / loss.replace(0, 0.000001)
-            rsi = 100 - (100 / (1 + rs))
+            rsi_val = 100 - (100 / (1 + rs))
             
-            sma = df['Close'].rolling(200).mean()
+            sma_val = df_scan['Close'].rolling(200).mean()
             
-            last_rsi = rsi.iloc[-1]
-            last_price = df['Close'].iloc[-1]
-            last_sma = sma.iloc[-1]
+            last_rsi = rsi_val.iloc[-1]
+            last_price = df_scan['Close'].iloc[-1]
+            last_sma = sma_val.iloc[-1]
             
-            if pd.notna(last_sma) and last_price > last_sma and last_rsi < 10:
-                st.sidebar.success(f"{c}: BUY SIGNAL! (RSI {last_rsi:.1f})")
-            else:
-                st.sidebar.write(f"{c}: Wait (RSI {last_rsi:.1f})")
-        except: pass
+            # Check Strategy Logic
+            # 1. Price > 200 SMA (Trend is UP)
+            # 2. RSI < 15 (Deep Panic)
+            if pd.notna(last_sma) and last_price > last_sma and last_rsi < 15:
+                st.sidebar.error(f"🚨 {c} BUY NOW! (RSI {last_rsi:.1f})")
+            elif pd.notna(last_sma) and last_price > last_sma and last_rsi < 30:
+                 st.sidebar.warning(f"👀 {c} Watch (RSI {last_rsi:.1f})")
+                
+        except Exception as e: 
+            pass
