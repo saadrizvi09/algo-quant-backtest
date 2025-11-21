@@ -9,7 +9,6 @@ from plotly.subplots import make_subplots
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="3-Down Sniper Strategy", layout="wide", page_icon="📉")
 
-# --- CUSTOM INDICATOR: SAFE RSI ---
 class SafeRSI(bt.Indicator):
     lines = ('rsi',)
     params = (('period', 14), ('movav', bt.indicators.MovAv.SMA))
